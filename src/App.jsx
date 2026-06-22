@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import * as THREE from 'three';
 import {
   Activity,
   Bug,
-  Database,
   FileText,
   Monitor,
   Pause,
@@ -79,120 +79,361 @@ function ToolbarButton({ icon: Icon, title, active, onClick }) {
   );
 }
 
-function ProjectTree({ project, activeView, setActiveView }) {
-  const views = [
-    { id: 'topology', label: 'Topology', icon: Activity },
-    { id: 'events', label: 'Event List', icon: Bug },
-    { id: 'reports', label: 'Reports', icon: FileText }
-  ];
+const NODE_COLORS = {
+  router: 0x2d527b,
+  server: 0x6f7c35,
+  workstation: 0x9a6a31,
+  sensor: 0x654f86
+};
 
-  return (
-    <aside className="dock-panel left-dock">
-      <div className="dock-title">Project Explorer</div>
-      <div className="tree-root">
-        <div className="tree-line tree-project">
-          <Database size={15} />
-          <span>{project.title}</span>
-        </div>
-        <div className="tree-children">
-          {views.map((view) => {
-            const Icon = view.icon;
-            return (
-              <button
-                className={`tree-line tree-button ${activeView === view.id ? 'is-selected' : ''}`}
-                key={view.id}
-                onClick={() => setActiveView(view.id)}
-              >
-                <Icon size={14} />
-                <span>{view.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-      <div className="property-grid">
-        <div className="property-row">
-          <span>Year</span>
-          <strong>2015~</strong>
-        </div>
-        <div className="property-row">
-          <span>Data</span>
-          <strong>JSON</strong>
-        </div>
-        <div className="property-row">
-          <span>Mode</span>
-          <strong>Sanitized</strong>
-        </div>
-      </div>
-    </aside>
-  );
+const STATE_COLORS = {
+  normal: null,
+  infected: 0xb13f4b,
+  defended: 0x347a43,
+  restored: 0x4c9b5d
+};
+
+function nodePosition(node) {
+  const x = (node.x - 50) * 0.16;
+  const y = node.z ?? 0.55;
+  const z = (node.y - 42) * 0.14;
+  return new THREE.Vector3(x, y, z);
+}
+
+function nodeColor(node, state) {
+  return STATE_COLORS[state] ?? NODE_COLORS[node.type] ?? 0x50605c;
+}
+
+function createNodeGeometry(type) {
+  if (type === 'router') {
+    return new THREE.CylinderGeometry(0.34, 0.4, 0.32, 32);
+  }
+
+  if (type === 'server') {
+    return new THREE.BoxGeometry(0.56, 0.56, 0.56);
+  }
+
+  if (type === 'sensor') {
+    return new THREE.OctahedronGeometry(0.38);
+  }
+
+  return new THREE.SphereGeometry(0.34, 32, 18);
+}
+
+function createLabelSprite(text) {
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  canvas.width = 512;
+  canvas.height = 128;
+
+  context.fillStyle = 'rgba(250, 252, 250, 0.9)';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.strokeStyle = 'rgba(77, 90, 84, 0.45)';
+  context.lineWidth = 4;
+  context.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
+  context.fillStyle = '#1d2427';
+  context.font = '600 34px Segoe UI, Arial, sans-serif';
+  context.textBaseline = 'middle';
+  context.fillText(text, 26, 64);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthWrite: false
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(1.9, 0.48, 1);
+  return sprite;
 }
 
 function TopologyCanvas({ scenario, currentTime, selectedNodeId, setSelectedNodeId }) {
-  const nodeStates = useMemo(
-    () => classifyNodes(scenario.nodes, scenario.events, currentTime),
-    [scenario.events, scenario.nodes, currentTime]
-  );
-  const nodeById = useMemo(() => new Map(scenario.nodes.map((node) => [node.id, node])), [scenario.nodes]);
+  const containerRef = useRef(null);
+  const graphRef = useRef(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) {
+      return undefined;
+    }
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xeef1ed);
+
+    const camera = new THREE.PerspectiveCamera(43, 1, 0.1, 100);
+    camera.position.set(0, 7.2, 10.2);
+    camera.lookAt(0, 0.4, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    container.appendChild(renderer.domElement);
+
+    const sceneLight = new THREE.HemisphereLight(0xffffff, 0xaab4ae, 2.6);
+    scene.add(sceneLight);
+
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.4);
+    keyLight.position.set(4, 9, 6);
+    scene.add(keyLight);
+
+    const graphGroup = new THREE.Group();
+    graphGroup.rotation.y = -0.35;
+    scene.add(graphGroup);
+
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(13, 9),
+      new THREE.MeshStandardMaterial({
+        color: 0xdfe6df,
+        roughness: 0.82,
+        metalness: 0.03
+      })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -0.04;
+    graphGroup.add(floor);
+
+    const grid = new THREE.GridHelper(13, 26, 0x899a94, 0xc5cec9);
+    grid.position.y = -0.02;
+    graphGroup.add(grid);
+
+    const positions = new Map(scenario.nodes.map((node) => [node.id, nodePosition(node)]));
+    const nodeEntries = [];
+    const linkEntries = [];
+    const pulseEntries = [];
+    const selectableMeshes = [];
+
+    scenario.links.forEach((link) => {
+      const source = positions.get(link.source);
+      const target = positions.get(link.target);
+      if (!source || !target) {
+        return;
+      }
+
+      const geometry = new THREE.BufferGeometry().setFromPoints([source, target]);
+      const material = new THREE.LineBasicMaterial({
+        color: 0x5d6f6a,
+        transparent: true,
+        opacity: 0.72
+      });
+      const line = new THREE.Line(geometry, material);
+      graphGroup.add(line);
+      linkEntries.push({ link, line, material });
+
+      const pulse = new THREE.Mesh(
+        new THREE.SphereGeometry(0.13, 16, 12),
+        new THREE.MeshBasicMaterial({
+          color: 0xd46b2f,
+          transparent: true,
+          opacity: 0.88
+        })
+      );
+      pulse.visible = false;
+      graphGroup.add(pulse);
+      pulseEntries.push({ link, mesh: pulse, source, target });
+    });
+
+    scenario.nodes.forEach((node) => {
+      const material = new THREE.MeshStandardMaterial({
+        color: nodeColor(node, 'normal'),
+        roughness: 0.46,
+        metalness: 0.18
+      });
+      const mesh = new THREE.Mesh(createNodeGeometry(node.type), material);
+      mesh.position.copy(positions.get(node.id));
+      mesh.userData.nodeId = node.id;
+      graphGroup.add(mesh);
+      selectableMeshes.push(mesh);
+      nodeEntries.push({ node, mesh, material });
+
+      const label = createLabelSprite(node.label);
+      label.position.copy(mesh.position);
+      label.position.y += 0.68;
+      graphGroup.add(label);
+    });
+
+    const selectedRing = new THREE.Mesh(
+      new THREE.TorusGeometry(0.52, 0.035, 12, 48),
+      new THREE.MeshBasicMaterial({
+        color: 0x1f5c56,
+        transparent: true,
+        opacity: 0.92
+      })
+    );
+    selectedRing.rotation.x = Math.PI / 2;
+    graphGroup.add(selectedRing);
+
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    let pointerDown = false;
+    let moved = false;
+    let lastX = 0;
+    let lastY = 0;
+
+    const handlePointerDown = (event) => {
+      pointerDown = true;
+      moved = false;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      renderer.domElement.setPointerCapture(event.pointerId);
+    };
+
+    const handlePointerMove = (event) => {
+      if (!pointerDown) {
+        return;
+      }
+
+      const deltaX = event.clientX - lastX;
+      const deltaY = event.clientY - lastY;
+      moved = moved || Math.abs(deltaX) + Math.abs(deltaY) > 4;
+      graphGroup.rotation.y += deltaX * 0.006;
+      graphGroup.rotation.x = Math.max(-0.65, Math.min(0.45, graphGroup.rotation.x + deltaY * 0.004));
+      lastX = event.clientX;
+      lastY = event.clientY;
+    };
+
+    const handlePointerUp = (event) => {
+      pointerDown = false;
+      renderer.domElement.releasePointerCapture(event.pointerId);
+
+      if (moved) {
+        return;
+      }
+
+      const bounds = renderer.domElement.getBoundingClientRect();
+      pointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
+      pointer.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
+      raycaster.setFromCamera(pointer, camera);
+
+      const [hit] = raycaster.intersectObjects(selectableMeshes, false);
+      if (hit?.object?.userData?.nodeId) {
+        setSelectedNodeId(hit.object.userData.nodeId);
+      }
+    };
+
+    const handleWheel = (event) => {
+      event.preventDefault();
+      camera.position.z = Math.max(6.8, Math.min(14.2, camera.position.z + event.deltaY * 0.006));
+      camera.lookAt(0, 0.4, 0);
+    };
+
+    renderer.domElement.addEventListener('pointerdown', handlePointerDown);
+    renderer.domElement.addEventListener('pointermove', handlePointerMove);
+    renderer.domElement.addEventListener('pointerup', handlePointerUp);
+    renderer.domElement.addEventListener('wheel', handleWheel, { passive: false });
+
+    const resize = () => {
+      const width = Math.max(1, container.clientWidth);
+      const height = Math.max(1, container.clientHeight);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      renderer.setSize(width, height, false);
+    };
+
+    const resizeObserver = new ResizeObserver(resize);
+    resizeObserver.observe(container);
+    resize();
+
+    const clock = new THREE.Clock();
+    let frameId = 0;
+    const animate = () => {
+      const elapsed = clock.getElapsedTime();
+      pulseEntries.forEach((entry, index) => {
+        if (!entry.mesh.visible) {
+          return;
+        }
+
+        const ratio = (elapsed * 0.55 + index * 0.17) % 1;
+        entry.mesh.position.lerpVectors(entry.source, entry.target, ratio);
+      });
+
+      selectedRing.rotation.z += 0.018;
+      renderer.render(scene, camera);
+      frameId = window.requestAnimationFrame(animate);
+    };
+    animate();
+
+    graphRef.current = {
+      graphGroup,
+      nodeEntries,
+      linkEntries,
+      pulseEntries,
+      selectedRing,
+      positions,
+      scene,
+      renderer
+    };
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      resizeObserver.disconnect();
+      renderer.domElement.removeEventListener('pointerdown', handlePointerDown);
+      renderer.domElement.removeEventListener('pointermove', handlePointerMove);
+      renderer.domElement.removeEventListener('pointerup', handlePointerUp);
+      renderer.domElement.removeEventListener('wheel', handleWheel);
+      graphRef.current = null;
+
+      scene.traverse((object) => {
+        if (object.geometry) {
+          object.geometry.dispose();
+        }
+
+        if (object.material) {
+          const materials = Array.isArray(object.material) ? object.material : [object.material];
+          materials.forEach((material) => {
+            if (material.map) {
+              material.map.dispose();
+            }
+            material.dispose();
+          });
+        }
+      });
+
+      renderer.dispose();
+      renderer.domElement.remove();
+    };
+  }, [scenario, setSelectedNodeId]);
+
+  useEffect(() => {
+    const graph = graphRef.current;
+    if (!graph) {
+      return;
+    }
+
+    const nodeStates = classifyNodes(scenario.nodes, scenario.events, currentTime);
+
+    graph.nodeEntries.forEach(({ node, mesh, material }) => {
+      const state = nodeStates.get(node.id);
+      const selected = selectedNodeId === node.id;
+      material.color.setHex(nodeColor(node, state));
+      material.emissive.setHex(state === 'infected' ? 0x4a1117 : selected ? 0x0b4f4a : 0x000000);
+      material.emissiveIntensity = state === 'infected' || selected ? 0.28 : 0;
+      mesh.scale.setScalar(selected ? 1.2 : 1);
+    });
+
+    graph.linkEntries.forEach(({ link, material }) => {
+      const active = isActiveLink(link, scenario.events, currentTime);
+      material.color.setHex(active ? 0xc96a2c : 0x5d6f6a);
+      material.opacity = active ? 1 : 0.72;
+      material.needsUpdate = true;
+    });
+
+    graph.pulseEntries.forEach(({ link, mesh }) => {
+      mesh.visible = isActiveLink(link, scenario.events, currentTime);
+    });
+
+    const selectedPosition = graph.positions.get(selectedNodeId);
+    graph.selectedRing.visible = Boolean(selectedPosition);
+    if (selectedPosition) {
+      graph.selectedRing.position.copy(selectedPosition);
+      graph.selectedRing.position.y += 0.03;
+    }
+  }, [scenario, currentTime, selectedNodeId]);
 
   return (
-    <div className="topology-frame">
-      <svg viewBox="0 0 100 80" role="img" aria-label="Network topology replay">
-        <defs>
-          <linearGradient id="surfaceGradient" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#f8faf7" />
-            <stop offset="100%" stopColor="#e8ece7" />
-          </linearGradient>
-          <pattern id="grid" width="8" height="8" patternUnits="userSpaceOnUse">
-            <path d="M 8 0 L 0 0 0 8" fill="none" stroke="#d9ded6" strokeWidth="0.2" />
-          </pattern>
-        </defs>
-        <rect x="0" y="0" width="100" height="80" fill="url(#surfaceGradient)" />
-        <rect x="0" y="0" width="100" height="80" fill="url(#grid)" />
-
-        {scenario.links.map((link) => {
-          const source = nodeById.get(link.source);
-          const target = nodeById.get(link.target);
-          const active = isActiveLink(link, scenario.events, currentTime);
-
-          return (
-            <g key={`${link.source}-${link.target}`}>
-              <line
-                className={`network-link ${active ? 'is-active' : ''}`}
-                x1={source.x}
-                y1={source.y}
-                x2={target.x}
-                y2={target.y}
-              />
-              <text className="link-label" x={(source.x + target.x) / 2} y={(source.y + target.y) / 2 - 1}>
-                {link.bandwidth}%
-              </text>
-            </g>
-          );
-        })}
-
-        {scenario.nodes.map((node) => {
-          const state = nodeStates.get(node.id);
-          const selected = selectedNodeId === node.id;
-
-          return (
-            <g
-              key={node.id}
-              className={`topology-node node-${node.type} state-${state} ${selected ? 'is-selected' : ''}`}
-              transform={`translate(${node.x} ${node.y})`}
-              onClick={() => setSelectedNodeId(node.id)}
-            >
-              <circle r={selected ? 4.9 : 4.2} />
-              <text className="node-code" y="1.1">
-                {node.type === 'router' ? 'R' : node.type === 'server' ? 'S' : node.type === 'sensor' ? 'N' : 'W'}
-              </text>
-              <text className="node-label" y="8">
-                {node.label}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
+    <div className="topology-frame webgl-frame">
+      <div ref={containerRef} className="webgl-canvas" aria-label="3D network topology replay" />
     </div>
   );
 }
@@ -387,12 +628,10 @@ function App() {
       </section>
 
       <main className="workspace">
-        <ProjectTree project={project} activeView={activeView} setActiveView={setActiveView} />
-
         <section className="main-panel">
           <div className="document-tabs">
             <button className={activeView === 'topology' ? 'is-active' : ''} onClick={() => setActiveView('topology')}>
-              Topology View
+              3D Topology
             </button>
             <button className={activeView === 'events' ? 'is-active' : ''} onClick={() => setActiveView('events')}>
               Event Timeline

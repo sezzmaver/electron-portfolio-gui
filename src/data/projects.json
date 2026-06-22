@@ -9,14 +9,14 @@
       "name": "Demo Scenario A",
       "duration": 120,
       "nodes": [
-        { "id": "core", "label": "Core Router", "type": "router", "priority": "critical", "x": 50, "y": 42 },
-        { "id": "ops", "label": "Ops Server", "type": "server", "priority": "critical", "x": 28, "y": 28 },
-        { "id": "db", "label": "Data Store", "type": "server", "priority": "medium", "x": 30, "y": 62 },
-        { "id": "analyst", "label": "Analyst PC", "type": "workstation", "priority": "medium", "x": 68, "y": 24 },
-        { "id": "gateway", "label": "Gateway", "type": "router", "priority": "medium", "x": 73, "y": 55 },
-        { "id": "sensor-a", "label": "Sensor A", "type": "sensor", "priority": "low", "x": 14, "y": 45 },
-        { "id": "sensor-b", "label": "Sensor B", "type": "sensor", "priority": "low", "x": 87, "y": 38 },
-        { "id": "operator", "label": "Operator", "type": "workstation", "priority": "medium", "x": 58, "y": 73 }
+        { "id": "core", "label": "Core Router", "type": "router", "priority": "critical", "x": 50, "y": 42, "z": 1.8 },
+        { "id": "ops", "label": "Ops Server", "type": "server", "priority": "critical", "x": 28, "y": 28, "z": 1.15 },
+        { "id": "db", "label": "Data Store", "type": "server", "priority": "medium", "x": 30, "y": 62, "z": 0.75 },
+        { "id": "analyst", "label": "Analyst PC", "type": "workstation", "priority": "medium", "x": 68, "y": 24, "z": 0.55 },
+        { "id": "gateway", "label": "Gateway", "type": "router", "priority": "medium", "x": 73, "y": 55, "z": 1.25 },
+        { "id": "sensor-a", "label": "Sensor A", "type": "sensor", "priority": "low", "x": 14, "y": 45, "z": 0.45 },
+        { "id": "sensor-b", "label": "Sensor B", "type": "sensor", "priority": "low", "x": 87, "y": 38, "z": 0.45 },
+        { "id": "operator", "label": "Operator", "type": "workstation", "priority": "medium", "x": 58, "y": 73, "z": 0.55 }
       ],
       "links": [
         { "source": "sensor-a", "target": "ops", "bandwidth": 38 },
