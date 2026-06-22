@@ -1,0 +1,59 @@
+[
+  {
+    "id": "cmt-covis",
+    "label": "CMT (2015~)",
+    "title": "CMT Compound Visualization System",
+    "subtitle": "Synthetic portfolio reconstruction",
+    "stack": ["C++/MFC", "OpenGL", "MySQL", "Windows Desktop"],
+    "scenario": {
+      "name": "Demo Scenario A",
+      "duration": 120,
+      "nodes": [
+        { "id": "core", "label": "Core Router", "type": "router", "priority": "critical", "x": 50, "y": 42 },
+        { "id": "ops", "label": "Ops Server", "type": "server", "priority": "critical", "x": 28, "y": 28 },
+        { "id": "db", "label": "Data Store", "type": "server", "priority": "medium", "x": 30, "y": 62 },
+        { "id": "analyst", "label": "Analyst PC", "type": "workstation", "priority": "medium", "x": 68, "y": 24 },
+        { "id": "gateway", "label": "Gateway", "type": "router", "priority": "medium", "x": 73, "y": 55 },
+        { "id": "sensor-a", "label": "Sensor A", "type": "sensor", "priority": "low", "x": 14, "y": 45 },
+        { "id": "sensor-b", "label": "Sensor B", "type": "sensor", "priority": "low", "x": 87, "y": 38 },
+        { "id": "operator", "label": "Operator", "type": "workstation", "priority": "medium", "x": 58, "y": 73 }
+      ],
+      "links": [
+        { "source": "sensor-a", "target": "ops", "bandwidth": 38 },
+        { "source": "ops", "target": "core", "bandwidth": 72 },
+        { "source": "db", "target": "core", "bandwidth": 62 },
+        { "source": "core", "target": "analyst", "bandwidth": 51 },
+        { "source": "core", "target": "gateway", "bandwidth": 84 },
+        { "source": "gateway", "target": "sensor-b", "bandwidth": 34 },
+        { "source": "gateway", "target": "operator", "bandwidth": 47 },
+        { "source": "operator", "target": "db", "bandwidth": 28 }
+      ],
+      "events": [
+        { "time": 8, "type": "scan", "source": "sensor-b", "target": "gateway", "label": "Probe detected" },
+        { "time": 19, "type": "attack-send", "source": "gateway", "target": "core", "label": "Suspicious transfer" },
+        { "time": 31, "type": "infection", "source": "core", "target": "core", "label": "Core node flagged" },
+        { "time": 47, "type": "attack-send", "source": "core", "target": "ops", "label": "Lateral movement" },
+        { "time": 58, "type": "infection", "source": "ops", "target": "ops", "label": "Server degraded" },
+        { "time": 72, "type": "defense", "source": "analyst", "target": "core", "label": "Containment rule" },
+        { "time": 88, "type": "remedy", "source": "operator", "target": "ops", "label": "Service restored" },
+        { "time": 104, "type": "defense", "source": "operator", "target": "gateway", "label": "Gateway hardened" }
+      ],
+      "metrics": [
+        { "time": 0, "traffic": 16, "risk": 8 },
+        { "time": 15, "traffic": 28, "risk": 18 },
+        { "time": 30, "traffic": 44, "risk": 51 },
+        { "time": 45, "traffic": 68, "risk": 67 },
+        { "time": 60, "traffic": 72, "risk": 74 },
+        { "time": 75, "traffic": 54, "risk": 42 },
+        { "time": 90, "traffic": 46, "risk": 22 },
+        { "time": 105, "traffic": 38, "risk": 16 },
+        { "time": 120, "traffic": 31, "risk": 12 }
+      ],
+      "reports": [
+        { "id": "r1", "name": "Topology Overview", "status": "Ready", "pages": 4 },
+        { "id": "r2", "name": "Event Trace", "status": "Ready", "pages": 8 },
+        { "id": "r3", "name": "Traffic Summary", "status": "Draft", "pages": 3 }
+      ]
+    }
+  }
+]
